@@ -7,14 +7,22 @@ node_modules/
 frontend/dist/
 
 # Database (auto-generated)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
 backend/db/*.db
 backend/db/*.db-wal
 backend/db/*.db-shm
 
-# Environment variables
+# Environment variables & credentials
 .env
-.env.local
-.env.production
+.env.*
+!.env.example
+*.pem
+*.key
+credentials*.json
 
 # IDE / Editor
 .vscode/

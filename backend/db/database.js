@@ -1,16 +1,18 @@
 const { DatabaseSync } = require('node:sqlite');
 const path = require('path');
+const { runMigrations } = require('./migrations');
 
-const DB_PATH = path.join(__dirname, 'caresync.db');
+const DEFAULT_DB_PATH = path.join(__dirname, 'caresync.db');
 let db;
+let activeDbPath = process.env.CARESYNC_DB_PATH || DEFAULT_DB_PATH;
 
 function getDB() {
   if (!db) {
-    db = new DatabaseSync(DB_PATH);
+    db = new DatabaseSync(activeDbPath);
     db.exec('PRAGMA foreign_keys = ON;');
     db.exec('PRAGMA journal_mode = WAL;');
+    db.exec('PRAGMA busy_timeout = 5000;');
 
-    // Helper method to wrap callback inside an ACID transaction
     db.transaction = function (fn) {
       return function (...args) {
         db.exec('BEGIN IMMEDIATE;');
@@ -30,16 +32,25 @@ function getDB() {
   return db;
 }
 
-function initializeDatabase() {
-  const db = getDB();
+function initializeDatabase(customPath = null) {
+  if (customPath && customPath !== activeDbPath) {
+    if (db) {
+      try { db.close(); } catch (_) {}
+      db = null;
+    }
+    activeDbPath = customPath;
+  }
 
-  db.exec(`
+  const database = getDB();
+
+  // Base tables (kept compatible with fresh installs before migrations run)
+  database.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
-      role TEXT CHECK(role IN ('patient', 'doctor', 'admin')) NOT NULL DEFAULT 'patient',
+      role TEXT CHECK(role IN ('patient', 'doctor', 'staff', 'admin')) NOT NULL DEFAULT 'patient',
       phone TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -82,7 +93,15 @@ function initializeDatabase() {
     );
   `);
 
-  console.log('✅ Database tables initialized (via node:sqlite)');
+  runMigrations(database);
+  return database;
 }
 
-module.exports = { getDB, initializeDatabase };
+function closeDB() {
+  if (db) {
+    try { db.close(); } catch (_) {}
+    db = null;
+  }
+}
+
+module.exports = { getDB, initializeDatabase, closeDB };
